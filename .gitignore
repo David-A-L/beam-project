@@ -23,5 +23,5 @@
 hs_err_pid*
 
 **/target/
-/testdata
+/data
 manifest.json

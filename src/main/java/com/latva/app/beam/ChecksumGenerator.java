@@ -24,8 +24,16 @@ import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
 import org.apache.beam.sdk.values.KV;
 
+/**
+ * A class that takes a specified input of files and generates a manifest.json
+ * containing the SHA256 checksums of those files
+ */
 public class ChecksumGenerator {
 
+  /**
+   * A DoFn that takes a file and outputs a KV containing a key of filename and a
+   * value of the calculated SHA256 of that file
+   */
   public static class GenerateChecksumsFn extends DoFn<FileIO.ReadableFile, KV<String, String>> {
 
     @ProcessElement
@@ -59,6 +67,10 @@ public class ChecksumGenerator {
     }
   }
 
+  /**
+   * A CombineFn that takes a collection of KV of filenames to checksums and a
+   * collapses them to a single Map
+   */
   public static class CombineChecksumsFn
       extends CombineFn<KV<String, String>, CombineChecksumsFn.Accum, Map<String, String>> {
     public static class Accum implements Serializable {
@@ -87,6 +99,10 @@ public class ChecksumGenerator {
     }
   }
 
+  /**
+   * A (very) SimpleFunction that turns a Map of String to String into its JSON
+   * representation
+   */
   public static class FormatAsJSONTextFn extends SimpleFunction<Map<String, String>, String> {
     @Override
     public String apply(Map<String, String> input) {
@@ -95,25 +111,37 @@ public class ChecksumGenerator {
     }
   }
 
+  /**
+   * Options for the checksum generator
+   */
   public interface ChecksumGeneratorOptions extends PipelineOptions {
     @Description("Path of the directory to read files from")
-    @Default.String("/testdata")
+    @Default.String("/data")
     String getInputDirectory();
 
     void setInputDirectory(String value);
 
-    @Description("Name of the file to write the manifest to")
-    String getOutput();
+    @Description("Path to write the manifest to")
+    @Default.String("")
+    String getOutputPath();
 
-    void setOutput(String value);
+    void setOutputPath(String value);
   }
 
+  /**
+   * Runs a pipeline that reads from the directory specified in options,
+   * calculates the file checksums and outputs them to a manifest.json
+   * 
+   * @param options
+   */
   static void runChecksumGenerator(ChecksumGeneratorOptions options) {
     Pipeline p = Pipeline.create(options);
 
+    // apologies for the spacing, my IDE is auto formatting them poorly
     p.apply(FileIO.match().filepattern(options.getInputDirectory() + "/*")).apply(FileIO.readMatches())
         .apply(ParDo.of(new GenerateChecksumsFn())).apply(Combine.globally(new CombineChecksumsFn()))
-        .apply(MapElements.via(new FormatAsJSONTextFn())).apply(TextIO.write().to("manifest.json").withoutSharding());
+        .apply(MapElements.via(new FormatAsJSONTextFn()))
+        .apply(TextIO.write().to(options.getOutputPath() + "manifest.json").withoutSharding());
 
     p.run().waitUntilFinish();
   }
